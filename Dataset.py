@@ -1,132 +1,131 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-from io import BytesIO
-import re
 
-st.set_page_config(page_title="Delegacia Inteligente", layout="wide")
-
-st.title("Delegacia Inteligente")
-st.write(
-    "Upload e pré-visualização de dataset. Esta base será utilizada nas próximas páginas: Hotspots, Clusters, Anomalias e Modelo Supervisionado."
+# Configuração da página
+st.set_page_config(
+    page_title="Delegacia Inteligente - Home",
+    page_icon="🕵️‍♂️",
+    layout="wide"
 )
 
-# Sidebar: upload e opções
-st.sidebar.header("Upload")
-sample_choice = st.sidebar.selectbox("Escolher dataset de exemplo", ("—", "Exemplo sintético"))
-uploaded_file = st.sidebar.file_uploader("Upload (CSV / XLSX)", type=["csv", "xlsx"])
+# Título principal
+st.title("Página Inicial - DELIT")
+st.markdown(
+    "Bem-vindo ao painel de ocorrências do DELIT. Aqui você pode visualizar um resumo geral dos dados disponíveis no sistema."
+)
 
+# Carregar dataset fixo
 @st.cache_data
-def load_data_from_file(uploaded_file):
-    if uploaded_file is None:
-        return None
-    name = getattr(uploaded_file, "name", "").lower()
-    try:
-        if name.endswith('.csv') or uploaded_file.type == 'text/csv':
-            return pd.read_csv(uploaded_file)
-        else:
-            return pd.read_excel(uploaded_file)
-    except Exception as e:
-        st.error(f"Erro ao ler o arquivo: {e}")
-        return None
+def carregar_dados():
+    return pd.read_csv("dataset_ocorrencias_delegacia_5.csv")
 
-@st.cache_data
-def create_example_df():
-    n = 300
-    df = pd.DataFrame({
-        "latitude": -8.05 + np.random.randn(n) * 0.015,
-        "longitude": -34.9 + np.random.randn(n) * 0.015,
-        "timestamp": pd.date_range("2023-01-01", periods=n, freq="H"),
-        "categoria": np.random.choice(["Roubo", "Furto", "Assalto"], size=n)
-    })
-    return df
+df = carregar_dados()
 
-# carregar dataframe
-if uploaded_file is not None:
-    df = load_data_from_file(uploaded_file)
-elif sample_choice == "Exemplo sintético":
-    df = create_example_df()
+# Métricas principais
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.metric("Total de Registros", f"{len(df):,}".replace(",", "."))
+with col2:
+    st.metric("Total de Colunas", len(df.columns))
+with col3:
+    st.metric("Colunas Numéricas", df.select_dtypes(include=['number']).shape[1])
+with col4:
+    st.metric("Colunas Categóricas", df.select_dtypes(exclude=['number']).shape[1])
+
+st.divider()
+
+# Pré-visualização do Dataset
+st.subheader("Pré-visualização dos Dados")
+st.dataframe(df.head(), use_container_width=True)
+
+# Estatísticas Gerais
+st.subheader("Estatísticas Gerais")
+st.dataframe(df.describe().T, use_container_width=True)
+
+st.divider()
+
+# Informes Hierárquicos e Interativos
+st.divider()
+st.subheader("Informes Rápidos")
+
+st.markdown(
+    "**Estes informes contam uma história sobre os crimes por bairro, crime e data.** "
+    "Escolha um bairro e, opcionalmente, um crime e/ou uma data para explorar os dados de forma hierárquica."
+)
+
+def nome_formal(coluna):
+    return coluna.replace("_", " ").title()
+
+df['data_ocorrencia'] = pd.to_datetime(df['data_ocorrencia'])
+
+bairros = df['bairro'].unique().tolist()
+bairro_selecionado = st.selectbox("Escolha o Bairro", bairros)
+
+df_bairro = df[df['bairro'] == bairro_selecionado]
+
+st.markdown(
+    """
+    <style>
+    div[data-baseweb="datepicker"] > div > input {
+        border: 2px solid #00acc1 !important;
+        border-radius: 8px !important;
+        padding: 8px !important;
+        box-shadow: 0 0 10px rgba(0, 172, 193, 0.5) !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+todas_datas = st.checkbox("Considerar todas as datas", value=True)
+if not todas_datas:
+    data_selecionada = st.date_input(
+        "Selecione a Data da Ocorrência",
+        value=df_bairro['data_ocorrencia'].min(),
+        min_value=df_bairro['data_ocorrencia'].min(),
+        max_value=df_bairro['data_ocorrencia'].max()
+    )
+    df_bairro = df_bairro[df_bairro['data_ocorrencia'].dt.date == data_selecionada]
+
+
+if not df_bairro.empty:
+    col1, col2, col3 = st.columns(3)
+
+
+    crime_mais_frequente = df_bairro['tipo_crime'].mode()[0]
+    col1.info(f"**Crime Mais Frequente**: {crime_mais_frequente}")
+
+    horario_mais_frequente = df_bairro['data_ocorrencia'].dt.hour.mode()[0]
+    col2.info(f"**Horário Mais Frequente**: {horario_mais_frequente}:00")
+
+    colunas_numericas = df_bairro.select_dtypes(include=['number']).columns
+    if len(colunas_numericas) > 0:
+        media_bairro = df_bairro[colunas_numericas].mean().mean()
+        col3.markdown(
+            f"<div style='background-color:#FFD700; padding:10px; border-radius:5px;'>"
+            f"Média Geral dos Valores Numéricos: {media_bairro:.2f}</div>",
+            unsafe_allow_html=True
+        )
+
+    top_crimes = df_bairro['tipo_crime'].value_counts().head(5).index.tolist()
+    crime_selecionado = st.selectbox(
+        "Filtrar por Crime (opcional)",
+        ["Todos"] + top_crimes
+    )
+
+    if crime_selecionado != "Todos":
+        df_bairro = df_bairro[df_bairro['tipo_crime'] == crime_selecionado]
+
+    st.markdown(f"### Detalhes para {bairro_selecionado}" + (f" - {crime_selecionado}" if crime_selecionado != "Todos" else "") + (f" em {data_selecionada}" if not todas_datas else ""))
+
+    top_crimes_tabela = df_bairro['tipo_crime'].value_counts().head(5)
+    st.table(top_crimes_tabela)
+
+    horario_medio_por_crime = df_bairro.groupby('tipo_crime')['data_ocorrencia'].apply(lambda x: x.dt.hour.mean()).reset_index()
+    horario_medio_por_crime.columns = ['Tipo de Crime', 'Horário Médio']
+    st.table(horario_medio_por_crime)
+
 else:
-    df = None
+    st.warning("Não há ocorrências registradas para esta combinação de bairro/crime/data.")
 
-if df is None:
-    st.info("Carregue um CSV/XLSX pela barra lateral ou escolha o exemplo sintético para começar.")
-else:
-    # Seleção de coluna pelo usuário
-    selected_col = st.selectbox("Selecionar uma Coluna", options=["(nenhuma)"] + list(df.columns))
-
-    if selected_col != "(nenhuma)":
-        st.subheader(f"Resumo da coluna: {selected_col}")
-        col_data = df[selected_col]
-
-        if pd.api.types.is_numeric_dtype(col_data):
-            st.write("Tipo: Numérico")
-            st.write(f"Média: {col_data.mean():.2f}")
-            st.write(f"Mediana: {col_data.median():.2f}")
-            st.write(f"Mínimo: {col_data.min():.2f}")
-            st.write(f"Máximo: {col_data.max():.2f}")
-            st.write("Alguns valores aleatórios:")
-            st.write(col_data.sample(min(5, len(col_data))).values)
-
-        elif pd.api.types.is_datetime64_any_dtype(col_data):
-            st.write("Tipo: Data/Hora")
-            st.write(f"Primeiro registro: {col_data.min()}")
-            st.write(f"Último registro: {col_data.max()}")
-            st.write(f"Número de registros: {len(col_data)}")
-            st.write("Alguns exemplos aleatórios:")
-            st.write(col_data.sample(min(5, len(col_data))).dt.strftime("%Y-%m-%d %H:%M:%S").values)
-
-        else:
-            st.write("Tipo: Categórico / Texto")
-            st.write("Valores mais frequentes:")
-            st.write(col_data.value_counts().head())
-            st.write("Alguns exemplos aleatórios:")
-            st.write(col_data.sample(min(5, len(col_data))).values)
-
-    # Pré-visualização com nomes “limpos”
-    def clean_column_names(df):
-        df_clean = df.copy()
-        df_clean.columns = [re.sub(r'\W+', '_', c) for c in df_clean.columns]  # substitui caracteres não alfanuméricos por '_'
-        return df_clean
-
-    with st.expander("Pré-visualização das primeiras linhas"):
-        st.dataframe(clean_column_names(df).head(), use_container_width=True)
-
-    # Estatísticas gerais
-    with st.expander("Estatísticas gerais"):
-        try:
-            st.write(df.describe(include='all'))
-        except Exception:
-            st.write("Não foi possível gerar estatísticas para este dataset.")
-
-    # Resumo de valores nulos
-    st.subheader("Resumo de valores nulos por coluna")
-    st.write(df.isnull().sum())
-
-    # Filtros interativos para colunas categóricas
-    categorical_cols = df.select_dtypes(include="object").columns.tolist()
-    for col in categorical_cols:
-        if st.sidebar.checkbox(f"Filtrar {col}?"):
-            options = st.sidebar.multiselect(f"Selecionar valores de {col}", df[col].unique(), default=df[col].unique())
-            df = df[df[col].isin(options)]
-
-    # Gráficos simples de distribuição
-    if categorical_cols:
-        st.subheader("Distribuição das categorias")
-        for col in categorical_cols:
-            counts = df[col].value_counts()
-            fig, ax = plt.subplots()
-            ax.bar(counts.index, counts.values)
-            plt.xticks(rotation=45)
-            st.pyplot(fig)
-
-    # Salvar dataframe em session_state para próximas páginas
-    st.session_state['df'] = df
-
-    # Botão para baixar CSV pré-processado
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button("Baixar CSV (pré-processado)", data=csv, file_name="dataset_preparado.csv", mime="text/csv")
-
-    st.markdown("---")
-    st.info("Próximos passos: criar páginas para Hotspots, Clusters, Anomalias e Modelo Supervisionado.")
