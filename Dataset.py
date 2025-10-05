@@ -88,10 +88,8 @@ if not todas_datas:
     )
     df_bairro = df_bairro[df_bairro['data_ocorrencia'].dt.date == data_selecionada]
 
-
 if not df_bairro.empty:
     col1, col2, col3 = st.columns(3)
-
 
     crime_mais_frequente = df_bairro['tipo_crime'].mode()[0]
     col1.info(f"**Crime Mais Frequente**: {crime_mais_frequente}")
@@ -115,17 +113,41 @@ if not df_bairro.empty:
     )
 
     if crime_selecionado != "Todos":
-        df_bairro = df_bairro[df_bairro['tipo_crime'] == crime_selecionado]
+        df_crime = df_bairro[df_bairro['tipo_crime'] == crime_selecionado]
+        st.markdown(f"### Detalhes para {bairro_selecionado} - {crime_selecionado}" + (f" em {data_selecionada}" if not todas_datas else ""))
 
-    st.markdown(f"### Detalhes para {bairro_selecionado}" + (f" - {crime_selecionado}" if crime_selecionado != "Todos" else "") + (f" em {data_selecionada}" if not todas_datas else ""))
+        # Tipo de arma mais comum
+        if 'tipo_arma' in df_crime.columns:
+            arma_mais_comum = df_crime['tipo_arma'].mode()[0]
+            st.info(f"**Tipo de Arma Mais Comum**: {arma_mais_comum}")
 
-    top_crimes_tabela = df_bairro['tipo_crime'].value_counts().head(5)
-    st.table(top_crimes_tabela)
+        # Sexo do suspeito mais frequente
+        if 'sexo_suspeito' in df_crime.columns:
+            sexo_mais_frequente = df_crime['sexo_suspeito'].mode()[0]
+            st.info(f"**Sexo do Suspeito Mais Frequente**: {sexo_mais_frequente}")
 
-    horario_medio_por_crime = df_bairro.groupby('tipo_crime')['data_ocorrencia'].apply(lambda x: x.dt.hour.mean()).reset_index()
-    horario_medio_por_crime.columns = ['Tipo de Crime', 'Horário Médio']
-    st.table(horario_medio_por_crime)
+        # Horário médio do crime
+        horario_medio = df_crime['data_ocorrencia'].dt.hour.mean()
+        st.info(f"**Horário Médio do Crime**: {horario_medio:.2f}h")
+
+        # Mostrar tabela de ocorrências detalhadas
+        colunas_exibir = ['data_ocorrencia', 'bairro', 'tipo_crime']
+        if 'tipo_arma' in df_crime.columns:
+            colunas_exibir.append('tipo_arma')
+        if 'sexo_suspeito' in df_crime.columns:
+            colunas_exibir.append('sexo_suspeito')
+
+        st.dataframe(df_crime[colunas_exibir])
+    else:
+        st.markdown(f"### Detalhes para {bairro_selecionado}" + (f" em {data_selecionada}" if not todas_datas else ""))
+        top_crimes_tabela = df_bairro['tipo_crime'].value_counts().head(5)
+        st.table(top_crimes_tabela)
+
+        horario_medio_por_crime = df_bairro.groupby('tipo_crime')['data_ocorrencia'].apply(lambda x: x.dt.hour.mean()).reset_index()
+        horario_medio_por_crime.columns = ['Tipo de Crime', 'Horário Médio']
+        st.table(horario_medio_por_crime)
 
 else:
     st.warning("Não há ocorrências registradas para esta combinação de bairro/crime/data.")
+
 
